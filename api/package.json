@@ -1,0 +1,8 @@
+{
+  "name": "bewick-consulting-services",
+  "version": "1.0.0",
+  "dependencies": {
+    "googleapis": "^134.0.0",
+    "formidable": "^3.5.1"
+  }
+}
