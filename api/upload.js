@@ -43,10 +43,11 @@ module.exports = async function handler(req, res) {
 
   try {
     // ---- Parse form ----
-    const form = new formidable.IncomingForm({
-      multiples: true,
-      maxFileSize: MAX_FILE_SIZE,
-    });
+    const form = formidable({
+  multiples: true,
+  maxFileSize: MAX_FILE_SIZE,
+});
+
 
     const [fields, files] = await new Promise((resolve, reject) => {
       form.parse(req, (err, flds, fls) => (err ? reject(err) : resolve([flds, fls])));
