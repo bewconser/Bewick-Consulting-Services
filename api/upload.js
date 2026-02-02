@@ -1,14 +1,8 @@
-import formidable from 'formidable';
-import fs from 'fs';
-import { google } from 'googleapis';
+// File: /api/upload.js
+const formidable = require('formidable');
+const fs = require('fs');
+const { google } = require('googleapis');
 
-export const config = {
-  api: {
-    bodyParser: false, // Required for file uploads
-  },
-};
-
-// ---- Config ----
 const ALLOWED_MIME_TYPES = [
   'application/pdf',
   'application/msword',
@@ -23,14 +17,19 @@ const ALLOWED_MIME_TYPES = [
 ];
 
 const FORBIDDEN_EXTENSIONS = ['.exe', '.bat', '.cmd', '.sh'];
-
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB per file
 const BATCH_SIZE = 3; // Parallel uploads
 
-export default async function handler(req, res) {
+exports.config = {
+  api: {
+    bodyParser: false, // Required for file uploads
+  },
+};
+
+module.exports = async function handler(req, res) {
   // ---- CORS ----
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST');
+  res.setHeader('Access-Control-Allow-Origin', process.env.NODE_ENV === 'development' ? 'http://localhost:5173' : '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -78,34 +77,24 @@ export default async function handler(req, res) {
 
     const folderId = folderResponse.data.id;
 
-    // ---- Normalize files ----
+    // ---- Normalize and validate files ----
     const fileArray = Array.isArray(files.file) ? files.file : [files.file];
-
-    // ---- Validate all files and collect errors ----
-    const errors: string[] = [];
 
     for (const file of fileArray) {
       const ext = '.' + (file.originalFilename?.toLowerCase().split('.').pop() || '');
 
-      if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-        errors.push(`File type not allowed: ${file.originalFilename}`);
-      }
+      if (!ALLOWED_MIME_TYPES.includes(file.mimetype))
+        return res.status(400).json({ error: `File type not allowed: ${file.originalFilename}` });
 
-      if (FORBIDDEN_EXTENSIONS.includes(ext)) {
-        errors.push(`Forbidden file extension: ${file.originalFilename}`);
-      }
+      if (FORBIDDEN_EXTENSIONS.includes(ext))
+        return res.status(400).json({ error: `Forbidden file extension: ${file.originalFilename}` });
 
-      if (file.size > MAX_FILE_SIZE) {
-        errors.push(`File too large (max 25MB): ${file.originalFilename}`);
-      }
-    }
-
-    if (errors.length > 0) {
-      return res.status(400).json({ errors });
+      if (file.size > MAX_FILE_SIZE)
+        return res.status(400).json({ error: `File too large (max 25MB): ${file.originalFilename}` });
     }
 
     // ---- Upload in parallel batches ----
-    const uploadedFiles: string[] = [];
+    const uploadedFiles = [];
 
     for (let i = 0; i < fileArray.length; i += BATCH_SIZE) {
       const batch = fileArray.slice(i, i + BATCH_SIZE);
@@ -141,4 +130,4 @@ export default async function handler(req, res) {
     console.error('Upload error:', error);
     res.status(500).json({ error: 'Upload failed', details: error.message });
   }
-}
+};
