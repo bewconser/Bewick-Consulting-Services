@@ -17,8 +17,8 @@ export default async function handler(req, res) {
     const { google } = require('googleapis');
     const formidable = require('formidable');
     
-    // Parse the form data
-    const form = formidable({ multiples: true });
+    // Parse the form data with CORRECTED syntax
+    const form = new formidable.IncomingForm({ multiples: true });
     const [fields, files] = await form.parse(req);
     
     // Google Drive credentials from environment variables
@@ -41,13 +41,13 @@ export default async function handler(req, res) {
     
     const drive = google.drive({ version: 'v3', auth });
 
-    // Create folder name
+    // Create folder name: "ClientName - Organization - Date"
     const clientName = fields.name[0];
     const organization = fields.organization[0];
     const date = new Date().toLocaleDateString().replace(/\//g, '-');
     const folderName = `${clientName} - ${organization} - ${date}`;
 
-    // Create folder
+    // Create folder in your Client Uploads folder
     const folderResponse = await drive.files.create({
       resource: {
         name: folderName,
@@ -58,7 +58,7 @@ export default async function handler(req, res) {
 
     const folderId = folderResponse.data.id;
 
-    // Upload files
+    // Upload files to the folder
     const uploadedFiles = [];
     const fileArray = Array.isArray(files.file) ? files.file : [files.file];
     
@@ -77,6 +77,7 @@ export default async function handler(req, res) {
       }
     }
 
+    // Return success with folder link
     res.status(200).json({
       success: true,
       folderId,
