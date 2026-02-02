@@ -4,10 +4,11 @@ import { google } from 'googleapis';
 
 export const config = {
   api: {
-    bodyParser: false,
+    bodyParser: false, // Required for file uploads
   },
 };
 
+// ---- Config ----
 const ALLOWED_MIME_TYPES = [
   'application/pdf',
   'application/msword',
@@ -21,8 +22,8 @@ const ALLOWED_MIME_TYPES = [
   'text/plain',
 ];
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
-const BATCH_SIZE = 3;
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB per file
+const BATCH_SIZE = 3; // Parallel uploads
 
 export default async function handler(req, res) {
   // ---- CORS ----
@@ -30,13 +31,8 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
     // ---- Parse form ----
@@ -46,27 +42,21 @@ export default async function handler(req, res) {
     });
 
     const [fields, files] = await new Promise((resolve, reject) => {
-      form.parse(req, (err, flds, fls) => {
-        if (err) reject(err);
-        else resolve([flds, fls]);
-      });
+      form.parse(req, (err, flds, fls) => (err ? reject(err) : resolve([flds, fls])));
     });
 
-    // ---- OAuth (personal Gmail) ----
-    const oAuth2Client = new google.auth.OAuth2(
+    // ---- Google Drive OAuth2 ----
+    const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
       process.env.GOOGLE_REDIRECT_URI
     );
 
-    oAuth2Client.setCredentials({
+    oauth2Client.setCredentials({
       refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
     });
 
-    const drive = google.drive({
-      version: 'v3',
-      auth: oAuth2Client,
-    });
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
     // ---- Create folder ----
     const clientName = fields.name?.[0] || 'Unknown Client';
@@ -81,27 +71,20 @@ export default async function handler(req, res) {
         parents: [process.env.GOOGLE_DRIVE_FOLDER_ID],
       },
       fields: 'id',
+      supportsAllDrives: true,
     });
 
     const folderId = folderResponse.data.id;
 
-    // ---- Normalize files ----
-    const fileArray = Array.isArray(files.file)
-      ? files.file
-      : [files.file];
+    // ---- Normalize and validate files ----
+    const fileArray = Array.isArray(files.file) ? files.file : [files.file];
 
-    // ---- Validate files ----
     for (const file of fileArray) {
-      if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-        return res.status(400).json({
-          error: `File type not allowed: ${file.originalFilename}`,
-        });
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        return res.status(400).json({
-          error: `File too large (max 25MB): ${file.originalFilename}`,
-        });
-      }
+      if (!ALLOWED_MIME_TYPES.includes(file.mimetype))
+        return res.status(400).json({ error: `File type not allowed: ${file.originalFilename}` });
+
+      if (file.size > MAX_FILE_SIZE)
+        return res.status(400).json({ error: `File too large (max 25MB): ${file.originalFilename}` });
     }
 
     // ---- Upload in parallel batches ----
@@ -121,6 +104,7 @@ export default async function handler(req, res) {
               mimeType: file.mimetype,
               body: fs.createReadStream(file.filepath),
             },
+            supportsAllDrives: true,
           })
         )
       );
@@ -128,7 +112,7 @@ export default async function handler(req, res) {
       batch.forEach(file => uploadedFiles.push(file.originalFilename));
     }
 
-    // ---- Success ----
+    // ---- Return success ----
     res.status(200).json({
       success: true,
       folderId,
@@ -138,9 +122,6 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({
-      error: 'Upload failed',
-      details: error.message,
-    });
+    res.status(500).json({ error: 'Upload failed', details: error.message });
   }
 }
