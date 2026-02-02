@@ -1,8 +1,14 @@
-// File: /api/upload.js
-const formidable = require('formidable');
-const fs = require('fs');
-const { google } = require('googleapis');
+import formidable from 'formidable';
+import fs from 'fs';
+import { google } from 'googleapis';
+import fetch from 'node-fetch';
+export const config = {
+  api: {
+    bodyParser: false, // Required for file uploads
+  },
+};
 
+// ---- Config ----
 const ALLOWED_MIME_TYPES = [
   'application/pdf',
   'application/msword',
@@ -118,6 +124,27 @@ module.exports = async function handler(req, res) {
       batch.forEach(file => uploadedFiles.push(file.originalFilename));
     }
 
+    // ---- Send confirmation email ----
+const templateParams = {
+  client_name: clientName,
+  organization: organization,
+  folder_link: `https://drive.google.com/drive/folders/${folderId}`,
+};
+
+await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    service_id: process.env.EMAILJS_SERVICE_ID,
+    template_id: process.env.EMAILJS_TEMPLATE_ID,
+    user_id: process.env.EMAILJS_PUBLIC_KEY,
+    template_params: templateParams,
+  }),
+});
+
+    
     // ---- Return success ----
     res.status(200).json({
       success: true,
