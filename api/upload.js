@@ -22,6 +22,8 @@ const ALLOWED_MIME_TYPES = [
   'text/plain',
 ];
 
+const FORBIDDEN_EXTENSIONS = ['.exe', '.bat', '.cmd', '.sh'];
+
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB per file
 const BATCH_SIZE = 3; // Parallel uploads
 
@@ -76,19 +78,34 @@ export default async function handler(req, res) {
 
     const folderId = folderResponse.data.id;
 
-    // ---- Normalize and validate files ----
+    // ---- Normalize files ----
     const fileArray = Array.isArray(files.file) ? files.file : [files.file];
 
-    for (const file of fileArray) {
-      if (!ALLOWED_MIME_TYPES.includes(file.mimetype))
-        return res.status(400).json({ error: `File type not allowed: ${file.originalFilename}` });
+    // ---- Validate all files and collect errors ----
+    const errors: string[] = [];
 
-      if (file.size > MAX_FILE_SIZE)
-        return res.status(400).json({ error: `File too large (max 25MB): ${file.originalFilename}` });
+    for (const file of fileArray) {
+      const ext = '.' + (file.originalFilename?.toLowerCase().split('.').pop() || '');
+
+      if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+        errors.push(`File type not allowed: ${file.originalFilename}`);
+      }
+
+      if (FORBIDDEN_EXTENSIONS.includes(ext)) {
+        errors.push(`Forbidden file extension: ${file.originalFilename}`);
+      }
+
+      if (file.size > MAX_FILE_SIZE) {
+        errors.push(`File too large (max 25MB): ${file.originalFilename}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({ errors });
     }
 
     // ---- Upload in parallel batches ----
-    const uploadedFiles = [];
+    const uploadedFiles: string[] = [];
 
     for (let i = 0; i < fileArray.length; i += BATCH_SIZE) {
       const batch = fileArray.slice(i, i + BATCH_SIZE);
